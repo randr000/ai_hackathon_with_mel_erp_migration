@@ -271,9 +271,15 @@ python -m pytest tests -v
 Two standalone checks that need live credentials or a hostile environment:
 
 ```bash
-python scripts/check_voice.py    # live ElevenLabs TTS -> STT round trip
-python scripts/check_deploy.py   # synthesis with an unwritable cache dir
+python scripts/check_voice.py     # live ElevenLabs TTS -> STT round trip
+python scripts/check_deploy.py    # synthesis with an unwritable cache dir
+python scripts/check_live.py      # end-to-end flow against a running server
+python scripts/check_contract.py  # every path app.js calls exists, as a POST
 ```
+
+`check_contract.py` is worth running after any endpoint change: it fails if the
+frontend calls a path the server does not serve, or if a session-carrying call
+is a GET (which cannot carry the session body).
 
 ## Notes and limitations
 

@@ -200,13 +200,14 @@ Parenthesised negatives `(1,234.56)` and `$` signs are parsed correctly.
 
 ## Deploying to Vercel
 
-The app is serverless-ready. `api/index.py` is the entrypoint Vercel's Python
-runtime looks for; `vercel.json` routes everything to it and bundles `static/`
-and `sample_data/`.
+The app is serverless-ready. Vercel detects the FastAPI instance in
+`app/main.py` automatically — no `vercel.json` and no `/api` entrypoint file are
+needed, and adding them would risk overriding the working zero-config routing.
+Deploy by connecting the GitHub repo, or run `vercel` in the project root.
 
 **Required environment variables** (Vercel → Project → Settings → Environment
 Variables). Set these *before* the first deploy, then redeploy — without the key
-voice silently reports as unavailable:
+voice reports as unavailable:
 
 | Variable | Value |
 |---|---|
@@ -241,7 +242,6 @@ filesystem degrades to "no caching" instead of an error.
 ## Project layout
 
 ```
-api/index.py    Vercel serverless entrypoint (exposes `app`)
 app/
   main.py       FastAPI routes, state handling (local + serverless)
   models.py     Pydantic domain models
@@ -253,7 +253,7 @@ app/
 static/         index.html, app.js, styles.css — no build step
 sample_data/    Demo charts and journal
 scripts/        Standalone verification helpers
-vercel.json     Function config and routing
+.vercelignore   Keeps tests/scripts out of the deployment bundle
 ```
 
 ## Tests

@@ -78,19 +78,23 @@ else:
 
 
 print()
-print("=== 3. Vercel entrypoint imports and exposes `app` ===")
+print("=== 3. FastAPI entrypoint Vercel auto-detects ===")
 
 os.environ.pop("VOICE_CACHE_DIR", None)
 try:
-    import importlib.util
+    # Vercel's zero-config Python runtime looks for a FastAPI instance named
+    # `app`; app/main.py is the module it finds. Importing it here proves the
+    # module is loadable in a fresh interpreter, which is what the build needs.
+    from app.main import app as fastapi_app
 
-    spec = importlib.util.spec_from_file_location("vercel_entry", ROOT / "api" / "index.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    check("api/index.py exposes an ASGI `app`", hasattr(module, "app"))
-    check("api/index.py's app is the FastAPI instance", type(module.app).__name__ == "FastAPI")
+    check("app.main exposes an ASGI `app`", fastapi_app is not None)
+    check("it is a FastAPI instance", type(fastapi_app).__name__ == "FastAPI")
+
+    routes = {getattr(r, "path", None) for r in fastapi_app.routes}
+    for expected in ("/api/health", "/api/load", "/api/migrate"):
+        check(f"route {expected} is registered", expected in routes)
 except Exception as exc:  # noqa: BLE001
-    check("api/index.py imports cleanly", False, repr(exc))
+    check("app.main imports cleanly", False, repr(exc))
 
 
 print()

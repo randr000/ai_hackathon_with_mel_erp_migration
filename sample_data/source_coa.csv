@@ -1,0 +1,47 @@
+account_number,account_name,type,detail_type
+1000,Operating Checking,Cash,Checking
+1010,Savings Account,Cash,Savings
+1100,Accounts Receivable,Accounts Receivable,A/R
+1110,Unbilled Receivables,Other Current Asset,Other Current Assets
+1200,Prepaid Expenses,Other Current Asset,Prepaid Expenses
+1210,Prepaid Insurance,Other Current Asset,Prepaid Expenses
+1220,Deferred Contract Costs,Other Current Asset,Other Current Assets
+1300,Security Deposits,Other Current Asset,Security Deposits
+1500,Computer Equipment,Fixed Asset,Computers
+1510,Accumulated Depreciation,Fixed Asset,Accumulated Depreciation
+2000,Accounts Payable,Accounts Payable,A/P
+2100,Accrued Expenses,Other Current Liability,Other Current Liabilities
+2110,Accrued Payroll,Other Current Liability,Payroll Clearing
+2120,Accrued Commissions,Other Current Liability,Other Current Liabilities
+2200,Credit Card Payable,Credit Card,Credit Card
+2300,Deferred Revenue,Other Current Liability,Deferred Revenue
+2400,Sales Tax Payable,Other Current Liability,Sales Tax Payable
+2500,Current Portion of Loan,Other Current Liability,Other Current Liabilities
+3000,Common Stock,Equity,Common Stock
+3100,Additional Paid-in Capital,Equity,Paid-in Capital
+3200,Retained Earnings,Equity,Retained Earnings
+4000,Subscription Revenue,Income,Sales of Product Income
+4010,Implementation Revenue,Income,Service/Fee Income
+4020,Professional Services Revenue,Income,Service/Fee Income
+4030,Usage-Based Revenue,Income,Sales of Product Income
+4100,Discounts & Credits,Income,Discounts/Refunds Given
+5000,Hosting & Cloud Infrastructure,Cost of Goods Sold,Supplies & Materials
+5010,Third-Party API Costs,Cost of Goods Sold,Supplies & Materials
+5020,Customer Support,Cost of Goods Sold,Payroll
+5030,Payment Processing Fees,Cost of Goods Sold,Bank Charges
+6000,Salaries & Wages,Expenses,Payroll Expenses
+6010,Payroll Taxes,Expenses,Payroll Expenses
+6100,Sales Commissions,Expenses,Commissions & Fees
+6200,Advertising & Marketing,Expenses,Advertising/Promotional
+6210,Software Subscriptions,Expenses,Software & Apps
+6220,Professional Fees,Expenses,Legal & Professional Fees
+6230,Accounting Fees,Expenses,Legal & Professional Fees
+6300,Rent & Office,Expenses,Rent or Lease
+6400,Travel & Entertainment,Expenses,Travel
+6500,Insurance Expense,Expenses,Insurance
+6600,Depreciation Expense,Expenses,Depreciation
+6700,Research & Development,Expenses,Other Business Expenses
+6800,Bank Fees,Expenses,Bank Charges
+6900,Miscellaneous Expense,Expenses,Other Business Expenses
+7000,Interest Income,Other Income,Interest Earned
+7100,Interest Expense,Other Expenses,Interest Paid

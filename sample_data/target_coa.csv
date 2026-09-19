@@ -1,0 +1,48 @@
+account_number,account_name,type,detail_type
+10000,Cash - Operating Bank Account,Cash,Checking
+10200,Savings Account,Cash,Savings
+11000,Trade Receivables,Accounts Receivable,A/R
+11100,Unbilled Receivables,Other Current Asset,Other Current Assets
+12000,Prepaid Expenses,Other Current Asset,Prepaid Expenses
+12100,Prepaid Insurance,Other Current Asset,Prepaid Expenses
+12200,Deferred Contract Costs,Other Current Asset,Other Current Assets
+13000,Security Deposits,Other Current Asset,Security Deposits
+15000,Property and Equipment,Fixed Asset,Computers
+15100,Accumulated Depreciation,Fixed Asset,Accumulated Depreciation
+20000,Accounts Payable,Accounts Payable,A/P
+21000,Accrued Liabilities,Other Current Liability,Other Current Liabilities
+21100,Payroll Liabilities,Other Current Liability,Payroll Clearing
+21200,Accrued Commissions,Other Current Liability,Other Current Liabilities
+22000,Credit Card Payable,Credit Card,Credit Card
+23000,Deferred Revenue,Other Current Liability,Deferred Revenue
+24000,Sales Tax Payable,Other Current Liability,Sales Tax Payable
+25000,Current Portion of Long-Term Debt,Other Current Liability,Other Current Liabilities
+30000,Common Stock,Equity,Common Stock
+31000,Additional Paid-in Capital,Equity,Paid-in Capital
+32000,Retained Earnings,Equity,Retained Earnings
+40000,Subscription Revenue,Income,Sales of Product Income
+40100,Implementation Revenue,Income,Service/Fee Income
+40200,Professional Services Revenue,Income,Service/Fee Income
+40300,Usage-Based Revenue,Income,Sales of Product Income
+41000,Discounts and Credits,Income,Discounts/Refunds Given
+50000,Hosting and Cloud Infrastructure,Cost of Goods Sold,Supplies & Materials
+50100,Third-Party API Costs,Cost of Goods Sold,Supplies & Materials
+50200,Customer Support,Cost of Goods Sold,Payroll
+50300,Payment Processing Fees,Cost of Goods Sold,Bank Charges
+60000,Salaries and Wages,Expenses,Payroll Expenses
+60100,Payroll Taxes,Expenses,Payroll Expenses
+61000,Sales Commissions,Expenses,Commissions & Fees
+61500,Dues and Subscriptions,Expenses,Software & Apps
+62000,Advertising and Marketing,Expenses,Advertising/Promotional
+62100,Software Subscriptions,Expenses,Software & Apps
+62200,Professional Fees,Expenses,Legal & Professional Fees
+62300,Accounting Fees,Expenses,Legal & Professional Fees
+63000,Rent and Office,Expenses,Rent or Lease
+64000,Travel and Entertainment,Expenses,Travel
+65000,Insurance Expense,Expenses,Insurance
+66000,Depreciation Expense,Expenses,Depreciation
+67000,Research and Development,Expenses,Other Business Expenses
+68000,Bank Fees,Expenses,Bank Charges
+69000,Other Operating Expenses,Expenses,Other Business Expenses
+70000,Interest Revenue,Other Income,Interest Earned
+71000,Interest Expense,Other Expenses,Interest Paid

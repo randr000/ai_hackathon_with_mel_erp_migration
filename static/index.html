@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ERP Migration Assistant</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>ERP Migration Assistant</h1>
+    <p class="subtitle">
+      Map a source chart of accounts onto a target chart, migrate the journal,
+      and prove the numbers survived.
+    </p>
+    <div id="voice-status" class="voice-status">Checking voice status…</div>
+    <div class="voice-bar">
+      <button id="btn-mic" class="mic" title="Hold to talk">🎤 Talk</button>
+      <span id="voice-hint" class="voice-hint"></span>
+      <span id="folder-hint" class="voice-hint"></span>
+    </div>
+  </header>
+
+  <nav class="steps">
+    <button class="step" data-step="1">1. Load data</button>
+    <button class="step" data-step="2">2. Review mappings</button>
+    <button class="step" data-step="3">3. Migrate</button>
+    <button class="step" data-step="4">4. Validate</button>
+  </nav>
+
+  <main>
+    <!-- STEP 1 -->
+    <section id="step-1" class="panel">
+      <h2>Load data</h2>
+      <p class="hint">
+        Upload a source and target chart of accounts (CSV or XLSX), plus
+        optionally a transaction journal. Or try the bundled sample data.
+      </p>
+
+      <div class="grid">
+        <label>
+          Source chart of accounts
+          <input type="file" id="source-file" accept=".csv,.xlsx,.xlsm" />
+        </label>
+        <label>
+          Target chart of accounts
+          <input type="file" id="target-file" accept=".csv,.xlsx,.xlsm" />
+        </label>
+        <label>
+          Transactions (optional)
+          <input type="file" id="txn-file" accept=".csv,.xlsx,.xlsm" />
+        </label>
+      </div>
+
+      <div class="actions">
+        <button id="btn-load" class="primary">Map accounts</button>
+        <button id="btn-samples">Load sample data</button>
+      </div>
+
+      <div id="load-msg" class="msg"></div>
+      <div id="summary-1" class="summary"></div>
+    </section>
+
+    <!-- STEP 2 -->
+    <section id="step-2" class="panel">
+      <h2>Review mappings</h2>
+      <p class="hint">
+        Mappings below the confidence threshold, or where a second candidate is
+        nearly as good, are flagged as <strong>needs review</strong>. Pick the
+        correct target account, or ask the agent to explain its reasoning.
+        Click any statistic to see the underlying records.
+      </p>
+
+      <div class="filters">
+        <label><input type="radio" name="filter" value="all" checked /> All</label>
+        <label><input type="radio" name="filter" value="needs_review" /> Needs review</label>
+        <label><input type="radio" name="filter" value="auto" /> Auto-mapped</label>
+        <label><input type="radio" name="filter" value="confirmed" /> Confirmed</label>
+        <label><input type="radio" name="filter" value="unmapped" /> Unmapped</label>
+        <button id="btn-clear-confirm" class="small">Reset decisions</button>
+        <a id="export-mappings" class="link" href="/api/export/mappings.csv">Export mappings CSV</a>
+      </div>
+
+      <div id="summary-2" class="summary"></div>
+      <div id="mappings"></div>
+    </section>
+
+    <!-- STEP 3 -->
+    <section id="step-3" class="panel">
+      <h2>Migrate transactions</h2>
+      <p class="hint">
+        Rewrites every journal line onto its target account. Amounts are copied
+        verbatim, never recalculated.
+      </p>
+      <div class="actions">
+        <button id="btn-migrate" class="primary">Run migration</button>
+        <a id="export-migrated" class="link" href="/api/export/migrated.csv">Export migrated CSV</a>
+      </div>
+      <div id="migrate-msg" class="msg"></div>
+      <div id="summary-3" class="summary"></div>
+    </section>
+
+    <!-- STEP 4 -->
+    <section id="step-4" class="panel">
+      <h2>Validate</h2>
+      <p class="hint">
+        Each check is an assertion about the migrated data. Errors block the
+        migration; warnings are advisory.
+      </p>
+      <div id="report"></div>
+      <div class="actions">
+        <button id="btn-speak-report">Read validation summary aloud</button>
+      </div>
+      <audio id="player" controls hidden></audio>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

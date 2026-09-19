@@ -1,0 +1,15 @@
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+# Cached ElevenLabs audio. Cached so repeated "Listen" clicks cost no credits.
+cache/
+*.mp3
+# App state that must not be committed (last-used folder, etc.)
+state/
+# Generated migration output
+out/
+.DS_Store
+.vscode/
+.idea/

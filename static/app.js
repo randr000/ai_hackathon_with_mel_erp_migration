@@ -1,40 +1,26 @@
 /* Frontend for the ERP migration assistant.
- * Plain ES modules-free JS: no build step, so the served file is the source.
- * Every request goes through `api()` so error handling stays in one place.
+ * Plain ES-module-free JS: no build step, so the served file is the source.
+ *
+ * The session lives in the browser, not on the server. This app runs both as a
+ * local process and as Vercel serverless functions, and serverless instances
+ * are ephemeral — anything kept in server memory can vanish between two clicks.
+ * So every request carries `state.session` and the server replays it: the
+ * inputs (charts, journal, human decisions) travel with each call, and the
+ * server recomputes the derived data (mappings, validation).
  */
 
 const state = {
+  // The session payload echoed back by the server on every response.
+  session: null,
   mappings: [],
   filter: "all",
   targets: [],
-  // Which collection the step-2 stats are currently showing. One of the
-  // summary labels ("Source accounts", "Target accounts", ...) or null for the
-  // default mappings table.
+  // Which step-2 stat is currently showing, or null for the default table.
   view: null,
+  voiceEnabled: false,
 };
 
 /* ---------- helpers ---------- */
-
-async function api(path, options = {}) {
-  const opts = { ...options };
-  if (opts.body && !(opts.body instanceof FormData)) {
-    opts.headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
-    opts.body = JSON.stringify(opts.body);
-  }
-  const response = await fetch(path, opts);
-  if (!response.ok) {
-    let detail = `HTTP ${response.status}`;
-    try {
-      const payload = await response.json();
-      if (payload.detail) detail = payload.detail;
-    } catch (_) {
-      /* response was not JSON; keep the status text */
-    }
-    throw new Error(detail);
-  }
-  const type = response.headers.get("content-type") || "";
-  return type.includes("application/json") ? response.json() : response;
-}
 
 function el(id) {
   return document.getElementById(id);
@@ -56,6 +42,34 @@ function escapeHtml(value) {
   }[ch]));
 }
 
+/** POST JSON, attaching the session when we have one. */
+async function post(path, body = {}) {
+  const payload = state.session ? { ...body, session: state.session } : { ...body };
+  const response = await fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const parsed = await response.json();
+      if (parsed.detail) detail = parsed.detail;
+    } catch (_) {
+      /* not JSON; keep the status text */
+    }
+    throw new Error(detail);
+  }
+  const type = response.headers.get("content-type") || "";
+  return type.includes("application/json") ? response.json() : response;
+}
+
+/** Store whatever session the server returned. */
+function remember(data) {
+  if (data && data.session) state.session = data.session;
+  return data;
+}
+
 /* ---------- step navigation ---------- */
 
 function showStep(n) {
@@ -73,43 +87,42 @@ document.querySelectorAll(".step").forEach((button) => {
 
 /* ---------- voice ---------- */
 
-let voiceEnabled = false;
-
 async function refreshVoiceStatus() {
+  const node = el("voice-status");
   try {
-    const status = await api("/api/voice/status");
-    voiceEnabled = status.enabled;
-    const node = el("voice-status");
-    if (status.enabled) {
+    const response = await fetch("/api/health");
+    const health = await response.json();
+    const v = health.voice || {};
+    state.voiceEnabled = !!v.enabled;
+    if (v.enabled) {
       node.className = "voice-status on";
       node.textContent =
-        `ElevenLabs ready · voice ${status.voice_id} · model ${status.model_id} · ` +
-        `${status.cached_clips} cached clip(s)`;
+        `ElevenLabs ready · voice ${v.voice_id} · model ${v.model_id} · ` +
+        `${v.cached_clips} cached clip(s)`;
     } else {
       node.className = "voice-status off";
       node.textContent =
-        "ElevenLabs not configured — add ELEVENLABS_API_KEY to .env to enable spoken explanations.";
+        "ElevenLabs not configured — add ELEVENLABS_API_KEY to this deployment's environment variables, then redeploy.";
     }
   } catch (error) {
-    el("voice-status").className = "voice-status off";
-    el("voice-status").textContent = `Voice status unavailable: ${error.message}`;
+    node.className = "voice-status off";
+    node.textContent = `Voice status unavailable: ${error.message}`;
   }
 }
 
 async function speak(text, sourceNumber) {
-  if (!voiceEnabled) {
-    setMsg("migrate-msg", "ElevenLabs is not configured. See README for setup.", "error");
+  if (!state.voiceEnabled) {
+    setMsg("migrate-msg", "ElevenLabs is not configured for this deployment.", "error");
     return;
   }
   const body = sourceNumber ? { source_number: sourceNumber } : { text };
   try {
-    const response = await api("/api/voice/speak", { method: "POST", body });
+    const response = await post("/api/voice/speak", body);
     const blob = await response.blob();
     const player = el("player");
     player.src = URL.createObjectURL(blob);
     player.hidden = false;
     await player.play();
-    refreshVoiceStatus(); // cached-clip count changed
   } catch (error) {
     setMsg("migrate-msg", `Speech failed: ${error.message}`, "error");
   }
@@ -134,11 +147,17 @@ async function loadCharts() {
 
   setMsg("load-msg", "Parsing and mapping…");
   try {
-    const summary = await api("/api/load", { method: "POST", body: form });
+    // Multipart, so this one bypasses post(): no session exists yet on first load.
+    const response = await fetch("/api/load", { method: "POST", body: form });
+    if (!response.ok) {
+      const parsed = await response.json().catch(() => ({}));
+      throw new Error(parsed.detail || `HTTP ${response.status}`);
+    }
+    const data = remember(await response.json());
     setMsg("load-msg", "Loaded and mapped.", "ok");
-    renderSummary("summary-1", summary);
-    await loadMappings();
-    await loadTargets();
+    renderSummary("summary-1", data.summary);
+    applyMappings(data);
+    loadTargets();
     showStep(2);
   } catch (error) {
     setMsg("load-msg", error.message, "error");
@@ -148,26 +167,39 @@ async function loadCharts() {
 async function loadSamples() {
   setMsg("load-msg", "Loading sample data…");
   try {
-    const summary = await api("/api/load-samples", { method: "POST" });
+    const data = remember(await post("/api/load-samples"));
     setMsg("load-msg", "Sample data loaded.", "ok");
-    renderSummary("summary-1", summary);
-    await loadMappings();
-    await loadTargets();
+    renderSummary("summary-1", data.summary);
+    applyMappings(data);
+    loadTargets();
     showStep(2);
   } catch (error) {
     setMsg("load-msg", error.message, "error");
   }
 }
 
-/* The target list is needed for the reviewer's dropdown. Derived from mappings
- * would miss unused accounts, so it comes from the mapping candidates plus the
- * targets already referenced. */
-async function loadTargets() {
+/** Store mappings from a response and re-render whatever view is active. */
+function applyMappings(data) {
+  state.mappings = data.mappings || state.mappings;
+  renderSummary("summary-2", data.summary);
+  if (state.view) {
+    STEP2_VIEWS[state.view]();
+  } else {
+    renderMappings();
+  }
+}
+
+async function refreshMappings() {
+  const data = remember(await post("/api/mappings"));
+  applyMappings(data);
+}
+
+/* The target list feeds the reviewer's dropdown. Derived from the mapping
+ * candidates plus the targets already referenced. */
+function loadTargets() {
   const seen = new Map();
   state.mappings.forEach((m) => {
-    (m.candidates || []).forEach((c) => {
-      seen.set(c.target_number, c.target_name);
-    });
+    (m.candidates || []).forEach((c) => seen.set(c.target_number, c.target_name));
     if (m.target_number) seen.set(m.target_number, m.target_name);
   });
   state.targets = [...seen.entries()]
@@ -177,8 +209,7 @@ async function loadTargets() {
 
 /* ---------- summaries ---------- */
 
-// The step-2 stats double as buttons that swap the content below them. `views`
-// maps a stat label to a renderer that fills the mappings container.
+// The step-2 stats double as buttons that swap the content below them.
 const STEP2_VIEWS = {
   "Source accounts": renderSourceAccounts,
   "Target accounts": renderTargetAccounts,
@@ -203,8 +234,9 @@ function renderSummary(nodeId, summary) {
   ];
   el(nodeId).innerHTML = stats
     .map(([label, value]) => {
-      const extra = interactive ? ` class="stat interactive" data-view="${label}"` : ' class="stat"';
-      return `<div${extra}>${label}: <b>${value}</b></div>`;
+      const cls = interactive ? ' class="stat interactive"' : ' class="stat"';
+      const attr = interactive ? ` data-view="${label}"` : "";
+      return `<div${cls}${attr}>${label}: <b>${value}</b></div>`;
     })
     .join("");
 
@@ -212,7 +244,6 @@ function renderSummary(nodeId, summary) {
     el(nodeId).querySelectorAll(".stat[data-view]").forEach((stat) => {
       stat.addEventListener("click", () => showStep2View(stat.dataset.view));
     });
-    // Restore the active highlight after a re-render.
     highlightActiveStat();
   }
 }
@@ -255,17 +286,17 @@ function renderMappingsView(status) {
 }
 
 async function renderSourceAccounts() {
-  const data = await api("/api/source-accounts");
+  const data = remember(await post("/api/source-accounts"));
   el("mappings").innerHTML = accountTable(data.accounts);
 }
 
 async function renderTargetAccounts() {
-  const data = await api("/api/target-accounts");
+  const data = remember(await post("/api/target-accounts"));
   el("mappings").innerHTML = accountTable(data.accounts);
 }
 
 async function renderTransactions() {
-  const data = await api("/api/transactions");
+  const data = remember(await post("/api/transactions"));
   const rows = (data.transactions || [])
     .map((t) => `
       <tr>
@@ -309,27 +340,9 @@ function accountTable(accounts) {
 
 /* ---------- step 2: mappings ---------- */
 
-async function loadMappings() {
-  const data = await api("/api/mappings");
-  state.mappings = data.mappings;
-  renderSummary("summary-2", data.summary);
-  // Re-render whatever view is active, not always the default table. This
-  // keeps the user in "needs review" (or any stat view) after accepting a
-  // mapping instead of snapping back to "all".
-  if (state.view) {
-    STEP2_VIEWS[state.view]();
-  } else {
-    renderMappings();
-  }
-}
-
 function statusBadge(mapping) {
   if (!mapping.target_number) return '<span class="badge unmapped">unmapped</span>';
-  const map = {
-    auto: "auto",
-    needs_review: "review",
-    confirmed: "confirmed",
-  };
+  const map = { auto: "auto", needs_review: "review", confirmed: "confirmed" };
   const label = mapping.status === "needs_review" ? "needs review" : mapping.status;
   return `<span class="badge ${map[mapping.status] || ""}">${label}</span>`;
 }
@@ -365,6 +378,7 @@ function renderMappings() {
 
   if (!filtered.length) {
     container.innerHTML = '<p class="hint">No mappings in this view.</p>';
+    highlightActiveStat();
     return;
   }
 
@@ -405,9 +419,7 @@ function mappingRow(m) {
         <div class="reasons">${pct(m.confidence)} · ${escapeHtml(m.method)}</div>
       </td>
       <td>${statusBadge(m)}</td>
-      <td>
-        <ul class="reasons">${reasons}</ul>
-      </td>
+      <td><ul class="reasons">${reasons}</ul></td>
       <td>
         <select data-source="${escapeHtml(m.source_number)}">${candidateOptions(m)}</select>
         <div style="margin-top:6px; display:flex; gap:6px;">
@@ -434,11 +446,10 @@ function bindMappingControls(container) {
 
 async function approveTop(sourceNumber) {
   try {
-    await api("/api/approve-top", {
-      method: "POST",
-      body: sourceNumber ? { source_number: sourceNumber } : {},
-    });
-    await loadMappings();
+    const data = remember(
+      await post("/api/approve-top", sourceNumber ? { source_number: sourceNumber } : {})
+    );
+    applyMappings(data);
   } catch (error) {
     setMsg("load-msg", error.message, "error");
   }
@@ -447,11 +458,10 @@ async function approveTop(sourceNumber) {
 async function confirmMapping(sourceNumber, targetNumber) {
   if (!targetNumber) return;
   try {
-    await api("/api/confirm", {
-      method: "POST",
-      body: { source_number: sourceNumber, target_number: targetNumber },
-    });
-    await loadMappings();
+    const data = remember(
+      await post("/api/confirm", { source_number: sourceNumber, target_number: targetNumber })
+    );
+    applyMappings(data);
   } catch (error) {
     setMsg("load-msg", error.message, "error");
   }
@@ -466,12 +476,43 @@ document.querySelectorAll('input[name="filter"]').forEach((radio) => {
 
 el("btn-clear-confirm").addEventListener("click", async () => {
   try {
-    const summary = await api("/api/confirm/clear", { method: "POST" });
-    renderSummary("summary-2", summary);
-    await loadMappings();
+    const data = remember(await post("/api/confirm/clear"));
+    applyMappings(data);
   } catch (error) {
     setMsg("load-msg", error.message, "error");
   }
+});
+
+/* ---------- downloads ---------- */
+
+/* Exports are POSTs because the session travels in the request body, so they
+ * cannot be plain <a href> links. Fetch the file, then hand the blob to a
+ * synthetic link so the browser's own download behaviour still applies. */
+async function downloadCsv(path, filename) {
+  try {
+    const response = await post(path);
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    setMsg("migrate-msg", `Download failed: ${error.message}`, "error");
+  }
+}
+
+el("export-mappings").addEventListener("click", (event) => {
+  event.preventDefault();
+  downloadCsv("/api/export/mappings.csv", "account_mappings.csv");
+});
+
+el("export-migrated").addEventListener("click", (event) => {
+  event.preventDefault();
+  downloadCsv("/api/export/migrated.csv", "migrated_transactions.csv");
 });
 
 /* ---------- step 3: migrate ---------- */
@@ -479,15 +520,16 @@ el("btn-clear-confirm").addEventListener("click", async () => {
 el("btn-migrate").addEventListener("click", async () => {
   setMsg("migrate-msg", "Migrating…");
   try {
-    const result = await api("/api/migrate", { method: "POST" });
+    const data = remember(await post("/api/migrate"));
+    applyMappings({ mappings: state.mappings, summary: data.summary });
     setMsg(
       "migrate-msg",
-      `Migrated ${result.summary.migrated_lines} lines` +
-        (result.unmapped_lines ? `, ${result.unmapped_lines} still unmapped.` : "."),
-      result.unmapped_lines ? "error" : "ok"
+      `Migrated ${data.summary.migrated_lines} lines` +
+        (data.unmapped_lines ? `, ${data.unmapped_lines} still unmapped.` : "."),
+      data.unmapped_lines ? "error" : "ok"
     );
-    renderSummary("summary-3", result.summary);
-    renderReport(result.report);
+    renderSummary("summary-3", data.summary);
+    renderReport(data.report);
     showStep(4);
   } catch (error) {
     setMsg("migrate-msg", error.message, "error");
@@ -547,8 +589,8 @@ let recordedChunks = [];
 let isRecording = false;
 
 async function startRecording() {
-  if (!voiceEnabled) {
-    el("voice-hint").textContent = "Voice input is disabled (no API key).";
+  if (!state.voiceEnabled) {
+    el("voice-hint").textContent = "Voice input is disabled (no API key on the server).";
     return;
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -558,10 +600,7 @@ async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     recordedChunks = [];
-    // Prefer webm/opus, which Scribe accepts; fall back to whatever is offered.
-    const mimeType = MediaRecorder.isTypeSupported("audio/webm")
-      ? "audio/webm"
-      : "";
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "";
     mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
     mediaRecorder.ondataavailable = (event) => {
       if (event.data.size) recordedChunks.push(event.data);
@@ -594,16 +633,12 @@ async function handleRecordingComplete() {
     return;
   }
   el("voice-hint").textContent = "Listening…";
-
-  // The transcript is sent as JSON; base64 keeps it a simple string.
-  const bytes = await blob.arrayBuffer();
-  const base64 = arrayBufferToBase64(bytes);
+  const base64 = arrayBufferToBase64(await blob.arrayBuffer());
 
   try {
-    const result = await api("/api/voice/command", {
-      method: "POST",
-      body: { audio: base64, filename: "clip.webm" },
-    });
+    const result = remember(
+      await post("/api/voice/command", { audio: base64, filename: "clip.webm" })
+    );
     el("voice-hint").textContent = `"${result.transcript}"`;
     if (result.reply) {
       speak(result.reply);
@@ -624,22 +659,16 @@ function arrayBufferToBase64(buffer) {
   return btoa(binary);
 }
 
-/* After a spoken command, refresh the UI the command may have changed, and if
- * the command was "download", trigger the browser download. */
 function applyCommandSideEffects(result) {
   if (result.intent === "download_mappings") {
-    window.location.href = "/api/export/mappings.csv";
+    downloadCsv("/api/export/mappings.csv", "account_mappings.csv");
   } else if (result.intent === "download_migrated") {
-    window.location.href = "/api/export/migrated.csv";
-  } else if (
-    ["approve_top", "approve", "map", "clear", "migrate", "validate"].includes(
-      result.intent
-    )
-  ) {
-    loadMappings();
-    if (result.intent === "migrate" || result.intent === "validate") {
-      api("/api/report").then((report) => renderReport(report)).catch(() => {});
-    }
+    downloadCsv("/api/export/migrated.csv", "migrated_transactions.csv");
+  } else if (["approve_top", "approve", "map", "clear"].includes(result.intent)) {
+    refreshMappings();
+  } else if (result.intent === "migrate" || result.intent === "validate") {
+    refreshMappings();
+    showStep(4);
   }
 }
 
@@ -650,14 +679,9 @@ el("btn-mic").addEventListener("touchend", stopRecording);
 
 /* ---------- folder tracking ---------- */
 
-async function refreshFolderHint() {
-  try {
-    const { folder } = await api("/api/folder");
-    if (folder) {
-      el("folder-hint").textContent = `Last folder: ${folder}`;
-    }
-  } catch (_) {
-    /* folder tracking is best-effort */
+function refreshFolderHint() {
+  if (state.session && state.session.last_folder) {
+    el("folder-hint").textContent = `Last folder: ${state.session.last_folder}`;
   }
 }
 
@@ -666,10 +690,6 @@ async function refreshFolderHint() {
 el("btn-load").addEventListener("click", loadCharts);
 el("btn-samples").addEventListener("click", loadSamples);
 
-/* Uploaded file inputs and downloads update the "last used folder" suggestion,
- * but browsers do not expose the full path of a file input for privacy. We can
- * only infer it on the download side, so we surface what the server remembers
- * and let the user set it explicitly via the API if they want. */
-refreshFolderHint();
 refreshVoiceStatus();
+refreshFolderHint();
 showStep(1);

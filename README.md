@@ -198,11 +198,52 @@ case-insensitively, so `Account Name`, `account_name` and `Description` all
 work. Transactions accept `class`/`Class` and treats `Description` as `memo`.
 Parenthesised negatives `(1,234.56)` and `$` signs are parsed correctly.
 
+## Deploying to Vercel
+
+The app is serverless-ready. `api/index.py` is the entrypoint Vercel's Python
+runtime looks for; `vercel.json` routes everything to it and bundles `static/`
+and `sample_data/`.
+
+**Required environment variables** (Vercel → Project → Settings → Environment
+Variables). Set these *before* the first deploy, then redeploy — without the key
+voice silently reports as unavailable:
+
+| Variable | Value |
+|---|---|
+| `ELEVENLABS_API_KEY` | your key |
+| `ELEVENLABS_VOICE_ID` | optional, defaults to Rachel |
+| `ELEVENLABS_MODEL_ID` | optional, defaults to `eleven_turbo_v2_5` |
+| `ELEVENLABS_STT_MODEL` | optional, defaults to `scribe_v1` |
+
+Do **not** set `PORT`. Vercel assigns it; the app only reads it when run
+directly as a script, which Vercel never does.
+
+### How it works without server state
+
+Serverless instances are ephemeral and a second request may land on a different,
+empty instance. So the session lives in the **browser**, not the server:
+
+- Every response from `/api/load`, `/api/load-samples`, and the mutation
+  endpoints includes a `session` object — the inputs (both charts, the journal,
+  filenames, and human decisions).
+- The frontend stores it and sends it back with every subsequent request.
+- The server replays it through the matcher, so mappings, validation and
+  exports are recomputed on demand rather than remembered.
+
+Mappings and the validation report are pure functions of those inputs, so
+nothing derived is trusted from the client. `tests/test_stateless.py` proves
+this by wiping the server's memory between every request — the same conditions
+Vercel imposes.
+
+The audio cache writes to the system temp directory, guarded so an unwritable
+filesystem degrades to "no caching" instead of an error.
+
 ## Project layout
 
 ```
+api/index.py    Vercel serverless entrypoint (exposes `app`)
 app/
-  main.py       FastAPI routes and in-memory session state
+  main.py       FastAPI routes, state handling (local + serverless)
   models.py     Pydantic domain models
   parsing.py    CSV/XLSX readers with loose header matching
   matching.py   Deterministic scoring engine + explanation generation
@@ -211,23 +252,31 @@ app/
   voice.py      ElevenLabs TTS + STT client (cached, truncated, credit-safe)
 static/         index.html, app.js, styles.css — no build step
 sample_data/    Demo charts and journal
+scripts/        Standalone verification helpers
+vercel.json     Function config and routing
 ```
 
 ## Tests
 
-56 tests covering the matcher, the validator and the spoken-command parser. The
-validator tests include negative cases — they corrupt the migrated data (drop a
-line, alter an amount by one cent, flip a leg, null a target) and assert the
-report **fails**.
+69 tests covering the matcher, the validator, the spoken-command parser, and the
+stateless request flow. The validator tests include negative cases — they corrupt
+the migrated data (drop a line, alter an amount by one cent, flip a leg, null a
+target) and assert the report **fails**. A validator that only ever passes is
+worse than none.
 
 ```bash
 python -m pytest tests -v
 ```
 
+Two standalone checks that need live credentials or a hostile environment:
+
+```bash
+python scripts/check_voice.py    # live ElevenLabs TTS -> STT round trip
+python scripts/check_deploy.py   # synthesis with an unwritable cache dir
+```
+
 ## Notes and limitations
 
-- **State is in memory.** Restarting the server clears the session. This is a
-  prototype choice that also guarantees each demo starts clean.
 - **Deterministic matching only.** The engine is rule-based, so results are
   reproducible and free. The `reasons` field is the seam where an LLM-backed
   explainer would plug in; the scoring engine would remain the source of truth.
@@ -237,5 +286,10 @@ python -m pytest tests -v
 - **Voice upload is not automated.** Browsers never expose a file's full path to
   JavaScript, so the app can remember and suggest the last-used folder but
   cannot silently pick files from it.
+- **Sessions are per-browser-tab.** Because the client holds the state, two tabs
+  do not share a migration session, and a page reload starts fresh.
+- **Large journals make large requests.** The session carries the full journal
+  on every call, which is fine at demo scale (130 lines) but would want a real
+  datastore for a production dataset.
 - **Currency is assumed single.** No FX conversion is attempted.
-- **No authentication.** Intended to run on localhost.
+- **No authentication.** Anyone with the URL can use the deployed instance.

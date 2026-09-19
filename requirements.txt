@@ -5,7 +5,3 @@ openpyxl==3.1.5
 httpx==0.28.1
 pydantic==2.10.4
 python-dotenv==1.0.1
-
-# Dev / test only
-pytest==8.3.4
-

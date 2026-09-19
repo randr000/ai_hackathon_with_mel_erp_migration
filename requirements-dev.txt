@@ -1,0 +1,4 @@
+# Development and test dependencies. Not installed in the Vercel deployment —
+# only requirements.txt is.
+-r requirements.txt
+pytest==8.3.4

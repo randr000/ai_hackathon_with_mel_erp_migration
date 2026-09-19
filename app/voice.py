@@ -8,13 +8,16 @@ Deliberately defensive about credits, since a hackathon balance is finite:
     explanation costs nothing.
   * Only the cheapest turbo model is used by default.
 
-Audio is written under cache/ so the browser can fetch it as a normal file.
+The disk cache is an optimisation only. Serverless platforms (Vercel, Lambda)
+mount the deployment read-only apart from the system temp directory, so every
+cache access is guarded: a cache failure re-synthesises instead of erroring.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 from pathlib import Path
 
 import httpx
@@ -24,7 +27,19 @@ from dotenv import load_dotenv
 # (scripts, tests, a REPL) and not only when imported through the server.
 load_dotenv()
 
-CACHE_DIR = Path("cache")
+
+def _cache_dir() -> Path:
+    """Directory for cached audio, guaranteed to be writable.
+
+    A relative "cache" path cannot be created on a read-only filesystem, which
+    is what a serverless deployment provides. Honour VOICE_CACHE_DIR when set,
+    otherwise fall back to the OS temp directory (always writable).
+    """
+    override = os.getenv("VOICE_CACHE_DIR", "").strip()
+    if override:
+        return Path(override)
+    return Path(tempfile.gettempdir()) / "erp-migration-cache"
+
 
 # ElevenLabs rejects very long inputs; this is a hard safety ceiling well below
 # the documented limit so a stray explanation cannot blow the balance.
@@ -61,7 +76,32 @@ def is_enabled() -> bool:
 
 def _cache_path(text: str, voice_id: str, model_id: str) -> Path:
     digest = hashlib.sha256(f"{voice_id}|{model_id}|{text}".encode()).hexdigest()
-    return CACHE_DIR / f"{digest}.mp3"
+    return _cache_dir() / f"{digest}.mp3"
+
+
+def _read_cache(path: Path) -> bytes | None:
+    """Return cached audio, or None when it is missing or unreadable."""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _write_cache(path: Path, audio: bytes) -> None:
+    """Best-effort cache write. Never raises: caching is only an optimisation."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(audio)
+    except OSError:
+        pass
+
+
+def _cached_clip_count() -> int:
+    """How many clips are cached, or 0 when the directory is unavailable."""
+    try:
+        return len(list(_cache_dir().glob("*.mp3")))
+    except OSError:
+        return 0
 
 
 def synthesize(text: str, voice_id: str | None = None, model_id: str | None = None) -> tuple[bytes, bool]:
@@ -85,10 +125,10 @@ def synthesize(text: str, voice_id: str | None = None, model_id: str | None = No
     if len(cleaned) > int(settings["max_chars"]):
         cleaned = cleaned[: int(settings["max_chars"])].rsplit(" ", 1)[0] + "..."
 
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cached = _cache_path(cleaned, voice, model)
-    if cached.exists():
-        return cached.read_bytes(), True
+    cached_audio = _read_cache(cached)
+    if cached_audio is not None:
+        return cached_audio, True
 
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice}"
     try:
@@ -125,8 +165,8 @@ def synthesize(text: str, voice_id: str | None = None, model_id: str | None = No
     if not audio:
         raise ElevenLabsError("ElevenLabs returned empty audio.")
 
-    # Persist so a repeat request is free.
-    cached.write_bytes(audio)
+    # Persist so a repeat request is free. Failure here is tolerated.
+    _write_cache(cached, audio)
     return audio, False
 
 
@@ -185,5 +225,5 @@ def usage_note() -> dict[str, object]:
         "model_id": settings["model_id"],
         "stt_model": settings["stt_model"],
         "max_chars": int(settings["max_chars"]),
-        "cached_clips": len(list(CACHE_DIR.glob("*.mp3"))) if CACHE_DIR.exists() else 0,
+        "cached_clips": _cached_clip_count(),
     }

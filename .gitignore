@@ -13,3 +13,12 @@ out/
 .DS_Store
 .vscode/
 .idea/
+.pytest_cache/
+# Screenshots produced while verifying the UI by hand
+preview.png
+screenshot-*.png
+# One-off local helpers, not part of the project
+push.py
+push.bat
+.git-commit-msg
+.git-token
